@@ -1,3 +1,4 @@
+import {reconcileAlerts} from './alerts';
 import seed from './seed.json';
 export type Role = 'Owner'|'Admin'|'Tutor'|'Portal';
 export type Session = typeof seed.sessions[number] & {reason?:string; replaces_id?:string};
@@ -120,6 +121,6 @@ export function execute(current:State,cmd:Command,role:Role='Owner',tutorId='T01
  case 'publish':{const a=s.assessments.find(a=>a.id===cmd.assessmentId);invariant(a,'Progres tidak ditemukan.');if(a.status==='published')return current;invariant(a.status==='submitted','Tutor harus submit sebelum publikasi.');a.status='published';a.published_at=s.demo_clock;log(s,'progress_published','Progres '+learnerName(s,a.enrollment_id)+' dipublikasikan');break;}
  case 'finish':{const e=s.enrollments.find(e=>e.id===cmd.enrollmentId);invariant(e&&cmd.reason.trim(),'Alasan selesai wajib diisi.');e.status='completed';e.completed_reason=cmd.reason.trim();log(s,'program_completed',learnerName(s,e.id)+' selesai sesuai tujuan: '+cmd.reason);break;}
  }
- return s;
+ return reconcileAlerts(s);
 }
-export function loadState():{state:State;notice:string}{try{const raw=localStorage.getItem(STORAGE_KEY);if(!raw)return{state:fresh(),notice:''};const value=JSON.parse(raw);if(value.schema_version!==seed.schema_version||!Array.isArray(value.actions)||!Array.isArray(value.holds))return{state:fresh(),notice:'Versi data berubah. Simulasi dimulai dari awal.'};return{state:normalizeTimes(value) as State,notice:''};}catch{return{state:fresh(),notice:'Penyimpanan browser tidak tersedia atau rusak. Demo menggunakan memori.'};}}
+export function loadState():{state:State;notice:string}{try{const raw=localStorage.getItem(STORAGE_KEY);if(!raw)return{state:fresh(),notice:''};const value=JSON.parse(raw);if(value.schema_version!==seed.schema_version||!Array.isArray(value.actions)||!Array.isArray(value.holds))return{state:fresh(),notice:'Versi data berubah. Simulasi dimulai dari awal.'};return{state:reconcileAlerts(normalizeTimes(value) as State),notice:''};}catch{return{state:fresh(),notice:'Penyimpanan browser tidak tersedia atau rusak. Demo menggunakan memori.'};}}
