@@ -1,6 +1,33 @@
 {
-  "name": "kabrtutor-demo", "private": true, "version": "1.0.0", "type": "module",
-  "scripts": {"dev":"vite --host 0.0.0.0", "build":"tsc -b && vite build", "test":"vitest run", "test:e2e":"playwright test", "check":"tsc -b"},
-  "dependencies": {"react":"^19.2.0", "react-dom":"^19.2.0", "react-router-dom":"^7.9.4", "lucide-react":"^0.468.0", "@supabase/supabase-js":"^2.80.0", "nodemailer":"^7.0.10", "zod":"^4.1.12"},
-  "devDependencies": {"@types/react":"^19.2.2", "@types/react-dom":"^19.2.2", "@types/node":"^24.10.0", "@types/nodemailer":"^7.0.3", "@vitejs/plugin-react":"^5.1.0", "typescript":"~5.9.3", "vite":"^7.2.2", "vitest":"^3.2.4", "@playwright/test":"^1.56.1"}
+  "name": "kabrtutor-demo",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc -b && vite build",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "check": "tsc -b"
+  },
+  "dependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-router-dom": "^7.9.4",
+    "lucide-react": "^0.468.0",
+    "@supabase/supabase-js": "^2.80.0",
+    "nodemailer": "^10.2.1",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "@types/node": "^24.10.0",
+    "@types/nodemailer": "^7.0.3",
+    "@vitejs/plugin-react": "^5.1.0",
+    "typescript": "~5.9.3",
+    "vite": "^7.2.2",
+    "vitest": "^5.0.5",
+    "@playwright/test": "^1.56.1"
+  }
 }
