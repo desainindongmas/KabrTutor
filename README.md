@@ -15,7 +15,7 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-`npm run dev` menjalankan frontend. Untuk fungsi server lokal, gunakan Netlify CLI: `npx netlify dev`. Environment rahasia di `.env` lokal, jangan commit. Frontend tetap dapat dijelajahi tanpa Supabase/Zoho; pengajuan sungguhan tidak akan menampilkan sukses jika backend belum tersedia.
+`npm run dev` menjalankan frontend. Untuk frontend dan Worker lokal gunakan `npm run preview:cloudflare`. Rahasia runtime berada di `.dev.vars`, jangan commit. Frontend tetap dapat dijelajahi tanpa Supabase/Zoho; pengajuan sungguhan tidak akan menampilkan sukses jika backend belum tersedia.
 
 Pemeriksaan invariant tanpa mengunduh dependensi, menggunakan Node 22.13+/24:
 
@@ -31,38 +31,53 @@ Baseline: 40 peserta aktif, kapasitas 40/51, kas Rp44.920.000, piutang Rp4.280.0
 
 Role switcher hanya alat simulasi. Pembatasan UI ini bukan sistem otorisasi tenant produksi. Tidak ada pembayaran, pesan peserta, checkout platform, atau pencairan honor nyata.
 
-## Deploy melalui GitHub → Netlify
+## Deploy GitHub → Cloudflare Workers
 
-1. Pilih **Add new project → Import an existing project → GitHub**, lalu repo `desainindongmas/KabrTutor`, branch `main`.
-2. Konfigurasi di `netlify.toml` menetapkan build `npm run build`, publish `dist`, serta Netlify Functions. Runtime Node 22.
-3. Frontend dapat diterbitkan setelah build lolos. Untuk mengaktifkan pengajuan nyata, lanjutkan konfigurasi di bawah sebelum mempromosikan form ke publik.
-4. Pada Domain management, tambahkan `kabrtutor.desainindongmas.my.id`. Di penyedia DNS buat CNAME `kabrtutor` menuju hostname `.netlify.app` yang Netlify berikan (jangan memakai URL GitHub atau alamat IP acak). Tunggu verifikasi dan penerbitan TLS Netlify.
-5. Uji URL langsung `/demo/owner`, `/biaya`, `/permintaan-demo` dan refresh route. Pastikan redirect `/api/demo-requests` tetap mendahului fallback SPA.
+Gunakan Workers dengan Static Assets, bukan Cloudflare Pages. `wrangler.jsonc` melayani frontend SPA, endpoint `/api/demo-requests`, serta Cron Trigger lima menit. Supabase tetap digunakan; migrasi SQL tidak berubah.
 
-## Supabase dan pengajuan nyata
+1. Cloudflare Dashboard → Workers & Pages → Create → Import a repository. Pilih `desainindongmas/KabrTutor`, branch `main`, proyek Worker bernama `kabrtutor-demo`.
+2. Build command: `npm run build`. Deploy command: `npx wrangler@4 deploy`. Root directory: `/`. Gunakan Node 22 pada build. Jangan mengatur output Pages; assets sudah ditentukan sebagai `dist` di Wrangler.
+3. Deploy pertama dapat dilakukan sebelum secrets tersedia untuk menguji demo. Form mengembalikan kegagalan yang jujur sampai backend siap. Cron akan gagal sampai konfigurasi lengkap; periksa Workers Logs.
+4. Pada Worker → Settings → Variables and Secrets, isi variabel pada tabel di bawah. Simpan kredensial sebagai Secret, bukan build variable atau variabel `VITE_`. Deploy ulang bila diminta dashboard.
+5. Jalankan SQL `supabase/migrations/202610260001_demo_requests.sql` sekali di proyek Supabase. Jika sudah pernah dijalankan, jangan ulangi CREATE TABLE.
+6. Setelah URL `workers.dev` berfungsi, Worker → Settings → Domains & Routes → Add → Custom Domain: `kabrtutor.desainindongmas.my.id`. Zona `desainindongmas.my.id` harus aktif di akun Cloudflare yang sama. Jika record `kabrtutor` masih menunjuk Netlify, hapus hanya record yang konflik saat cutover lalu tambahkan custom domain melalui Worker. Cloudflare mengelola DNS/TLS binding tersebut. Jangan mengubah record MX/TXT email.
+7. Setelah custom domain lolos, hentikan auto-deploy Netlify dan hapus custom domain lama di Netlify. Jangan mematikan situs lama sebelum domain baru terverifikasi.
 
-1. Buat proyek Supabase PostgreSQL. Jalankan `supabase/migrations/202610260001_demo_requests.sql` sekali melalui SQL editor.
-2. Di Netlify Site configuration → Environment variables, tambahkan nilai server dari `.env.example`. Jangan beri prefix `VITE_`. Scope diperlukan pada Functions/runtime; redeploy setelah berubah.
-3. `SUPABASE_SERVICE_ROLE_KEY` hanya di server. Tabel menggunakan RLS tanpa public policies, dan RPC dibatasi untuk `service_role`. Tidak ada API publik untuk mencari PIC/kontak dari referensi.
-4. Buat `RATE_LIMIT_SECRET` acak (minimal 32 byte); IP di-hash dengan rahasia sebelum rate limiter, maksimal lima pengajuan baru per jam per IP. Retry idempotent tidak menerbitkan lead baru.
-5. Admin berizin mengakses tabel melalui Supabase dashboard. Tidak ada halaman daftar permintaan publik. Tetapkan akses tim dan kebijakan retensi data sesuai kebutuhan operasional lembaga.
+### Konfigurasi runtime
 
-API: `POST /api/demo-requests`, JSON dan header UUID `Idempotency-Key`. Field sesuai form; unknown fields ditolak. Respons sukses berisi `reference` dan `emailStatus: QUEUED`, tanpa membocorkan isi record. Penyimpanan lead dan pembuatan job email berada dalam satu transaksi. Retry token/payload sama mengembalikan referensi sama; payload berbeda ditolak 409. Kegagalan DB/config mengembalikan 503 tanpa kode sukses.
+| Nama | Isi |
+| --- | --- |
+| `SUPABASE_URL` | URL proyek Supabase |
+| `SUPABASE_SERVICE_ROLE_KEY` | Secret server Supabase; jangan anon key |
+| `RATE_LIMIT_SECRET` | Secret acak minimal 32 byte; misalnya hasil `openssl rand -hex 32` |
+| `ZOHO_CLIENT_ID` | Client OAuth Zoho |
+| `ZOHO_CLIENT_SECRET` | Secret client OAuth |
+| `ZOHO_REFRESH_TOKEN` | Refresh token OAuth offline |
+| `ZOHO_ACCOUNT_ID` | ID akun email pengirim dari Zoho Mail API |
+| `ZOHO_FROM` | Alamat sender yang diizinkan akun Zoho |
+| `ZOHO_ACCOUNTS_ORIGIN` | Accounts origin sesuai data center, default `https://accounts.zoho.com` |
+| `ZOHO_MAIL_ORIGIN` | Mail API origin pada data center yang sama, default `https://mail.zoho.com` |
 
-## Zoho SMTP dan outbox
+### Zoho: beralih dari SMTP ke HTTPS API
 
-- Gunakan hostname pusat data akun Zoho yang sesuai (misalnya `smtp.zoho.com`), port 465 TLS atau 587 STARTTLS. Isi `SMTP_USER`, `SMTP_PASSWORD` (app password bila diwajibkan Zoho), dan `SMTP_FROM` dengan sender yang diizinkan akun. Jangan kirim password melalui chat.
-- `MAIL_MESSAGE_DOMAIN` adalah domain sender terverifikasi untuk Message-ID stabil. Pastikan SPF/DKIM domain dikonfigurasi di Zoho.
-- Penerima tetap: `admin3@desainindongmas.my.id`. WhatsApp lanjutan tetap `6285952839393`; pesan hanya dikirim setelah pengunjung menekan kirim di WhatsApp.
-- Netlify Scheduled Function `email-worker` berjalan setiap lima menit pada deploy produksi. Development/Deploy Preview tidak menjalankan jadwal otomatis. Periksa ketersediaan Scheduled Functions dan batas penggunaan paket Netlify yang dipakai.
-- Worker mengambil maksimal tiga job dengan lock/lease dan mencoba kirim secara paralel, paling banyak lima attempt dengan backoff. Job gagal tetap tersimpan; periksa outbox dan attempts pada dashboard Supabase. `SENT` berarti transport menerima email, bukan bukti email masuk inbox atau dibaca.
-- Timeout setelah SMTP menerima pesan dapat menghasilkan duplikasi; Message-ID stabil dan audit hasil tidak pasti membantu pemeriksaan. Tidak mengklaim exactly-once delivery.
-- Sebelum go-live, kirim pengajuan berlabel **UJI INTERNAL** melalui form. Verifikasi satu record dan satu job pada double-submit, attempt terjadwal, penerimaan transport, serta inbox admin secara terpisah. Uji juga SMTP gagal dan DB gagal. Hapus/arsipkan data uji lewat admin setelah pengecekan.
+Worker mengirim melalui Zoho Mail API HTTPS. `SMTP_*` dan `MAIL_MESSAGE_DOMAIN` tidak digunakan lagi. Penerima tetap `admin3@desainindongmas.my.id`; WhatsApp tetap `6285952839393`.
 
-## Verifikasi dan batas yang perlu diketahui
+Di Zoho API Console pada data center akunmu, buat Self Client untuk integrasi server milik sendiri. Berikan scopes `ZohoMail.messages.CREATE,ZohoMail.accounts.READ`. Ikuti alur grant-code/OAuth Zoho untuk mendapatkan refresh token; grant code berumur pendek dan bukan refresh token. Tukarkan kode di lingkungan milikmu, lalu simpan client secret dan refresh token hanya sebagai Worker Secrets. Jangan kirim token lewat chat atau commit.
 
-GitHub Actions menjalankan unit/integration tests, TypeScript, production build, dan browser tests desktop/mobile pada setiap push/PR. Test API menggunakan store/transport uji dan tidak mengirim email nyata.
+Dengan access token, `GET {ZOHO_MAIL_ORIGIN}/api/accounts` memberikan accountId akun pengirim. Pilih akun yang memiliki alamat `ZOHO_FROM`. Pastikan paket akun mendukung Mail API dan sender/domain diizinkan. Dokumentasi: https://www.zoho.com/mail/help/api/ dan https://www.zoho.com/accounts/protocol/oauth.html .
 
-Tidak ada analytics eksternal pada versi awal; action log simulasi lokal tidak memuat kontak pengunjung. Waktu simulasi mulai 26 Oktober 2026, 09.00 WIB, terpisah dari timestamp server permintaan nyata. Harga SaaS mengikuti katalog blueprint; harga kursus dan estimasi honor/margin adalah ilustrasi.
+Antrean tetap persisten di Supabase, dengan claim/lease, maksimal lima attempt, dan backoff. Cron Trigger berjalan setiap lima menit; propagasi perubahan jadwal Cloudflare dapat membutuhkan beberapa menit. Email sukses berarti diterima provider, bukan bukti inbox. Zoho Mail API tidak memberi jaminan exactly-once: timeout setelah penerimaan dapat menyebabkan duplikasi pada retry. Gunakan referensi tetap pada subjek untuk memeriksa hasil yang tidak pasti; riwayat attempt tidak dihapus.
 
-Koneksi akun Netlify, Supabase, Zoho, dan DNS perlu dikonfigurasi pemilik layanan. Adanya source code tidak membuktikan deployment atau email sungguhan telah aktif. Jangan menandai QA email/database live lulus sebelum konfigurasi dan pengujian di layanan terkait.
+### Verifikasi setelah konfigurasi
+
+- Uji `/demo/owner`, `/biaya`, `/permintaan-demo` melalui URL langsung dan refresh.
+- Jalankan workflow **Verify public Cloudflare deployment** secara manual setelah custom domain siap. Pemeriksaan ini hanya membaca halaman dan batas metode API; tidak mengirim lead.
+- Kirim satu form bertanda **UJI INTERNAL**. Pastikan satu record `demo_requests`, satu job outbox, dan kode referensi yang sama pada retry.
+- Periksa Worker Cron/log serta tabel attempts. Konfirmasi email masuk inbox admin secara terpisah. Reset demo tidak boleh menghapus permintaan.
+- Jangan mengaktifkan promosi form sebelum uji database dan email sungguhan selesai. Tidak ada public lookup berdasarkan kode referensi.
+
+### Lokal dan CI
+
+`npm run preview:cloudflare` membangun frontend dan menjalankan Wrangler. Simpan runtime secrets lokal pada `.dev.vars` (diabaikan Git). `npm run deploy` membangun dan deploy melalui login Wrangler milikmu. CI menjalankan tes, TypeScript, Vite build, Wrangler dry-run, dan tes browser. Dry-run tidak memerlukan kredensial Cloudflare dan tidak menerbitkan Worker.
+
+State simulasi browser, seluruh role, harga software, dan dataset fiktif tetap sama. Backend tenant produksi tidak termasuk demo. Database/email live hanya dianggap terverifikasi setelah konfigurasi akun dan pemeriksaan nyata.

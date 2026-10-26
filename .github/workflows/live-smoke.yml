@@ -1,8 +1,6 @@
-name: Verify public Netlify deployment
+name: Verify public Cloudflare deployment
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
 jobs:
   smoke:
     runs-on: ubuntu-latest
@@ -13,7 +11,7 @@ jobs:
       - name: Check public pages and API boundary without submitting a lead
         run: |
           node --input-type=module <<'JS'
-          const origin='https://demo-kabrtutor.netlify.app';
+          const origin='https://kabrtutor.desainindongmas.my.id';
           for(const path of ['/', '/demo/owner', '/biaya', '/permintaan-demo']) {
             const r=await fetch(origin+path); const text=await r.text();
             console.log(path,r.status,'KabrTutor:',text.includes('KabrTutor'));

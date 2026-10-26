@@ -8,7 +8,10 @@
     "build": "tsc -b && vite build",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "check": "tsc -b"
+    "check": "tsc -b",
+    "deploy": "npm run build && npx wrangler@4 deploy",
+    "preview:cloudflare": "npm run build && npx wrangler@4 dev",
+    "check:worker": "npx wrangler@4 deploy --dry-run"
   },
   "dependencies": {
     "react": "^19.2.0",
