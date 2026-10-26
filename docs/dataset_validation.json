@@ -1,0 +1,15 @@
+{
+  "active_unique_learners": 40,
+  "capacity_active": 40,
+  "capacity_total": 51,
+  "issued_invoice_total_idr": 49200000,
+  "cash_received_idr": 44920000,
+  "receivables_idr": 4280000,
+  "completed_sessions": 25,
+  "completed_service_units": 148,
+  "near_end_packages": 11,
+  "simulation_service_value_idr": 19200000,
+  "simulation_direct_cost_idr": 4810000,
+  "simulation_contribution_idr": 14390000,
+  "checks": "PASS: IDs, FKs allocations, balances, capacities, interval conflicts, idempotency and totals"
+}

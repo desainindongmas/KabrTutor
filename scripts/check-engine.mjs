@@ -1,0 +1,29 @@
+// Dependency-free fallback for the blueprint invariants when npm networking is unavailable.
+import {readFileSync} from 'node:fs';
+import {stripTypeScriptTypes} from 'node:module';
+import assert from 'node:assert/strict';
+const source=readFileSync(new URL('../src/engine.ts',import.meta.url),'utf8').replace("import seed from './seed.json';",`const seed=${readFileSync(new URL('../src/seed.json',import.meta.url),'utf8')};`);
+const js=stripTypeScriptTypes(source,{mode:'strip'});
+const engine=await import('data:text/javascript;base64,'+Buffer.from(js).toString('base64'));
+const{fresh,execute,metrics,balance,roster,available}=engine;
+let count=0;
+function test(name,run){run();count++;console.log('PASS',name);}
+test('Baseline: all financial, learner, capacity and service totals',()=>assert.deepEqual(metrics(fresh()),{active:40,occupied:40,capacity:51,cash:44920000,receivables:4280000,completed:25,service:19200000,costs:4810000,contribution:14390000,near:11}));
+let state=execute(fresh(),{type:'enroll',leadId:'LEAD01',offeringId:'O01'});
+test('Pending: 40 active and one hold',()=>{assert.equal(metrics(state).active,40);assert.equal(available(state,'O01'),3);});
+state=execute(state,{type:'pay',invoiceId:'INV041',amount:300000,key:'partial'});
+test('Partial: cash +300000, receivables 4780000, no grant',()=>{assert.equal(metrics(state).cash,45220000);assert.equal(metrics(state).receivables,4780000);assert.equal(state.entitlements.some(e=>e.id==='ENT041'),false);});
+state=execute(state,{type:'pay',invoiceId:'INV041',amount:500000,key:'final'});
+test('Final: 41 active, cash 45720000, +8 units',()=>{assert.equal(metrics(state).active,41);assert.equal(metrics(state).cash,45720000);assert.equal(balance(state,'ENT041'),8);assert.equal(roster(state,'O01-F26').length,7);});
+test('Retry payment is idempotent and changed payload rejected',()=>{assert.deepEqual(execute(state,{type:'pay',invoiceId:'INV041',amount:500000,key:'final'}),state);assert.throws(()=>execute(state,{type:'pay',invoiceId:'INV041',amount:10,key:'final'}));});
+state=execute(state,{type:'clock',at:'2026-10-26T16:00:00+07:00'},'Tutor');state=execute(state,{type:'start',sessionId:'O01-F26'},'Tutor');
+for(const p of roster(state,'O01-F26'))state=execute(state,{type:'attendance',sessionId:'O01-F26',enrollmentId:p.enrollment_id,status:'present'},'Tutor');
+state=execute(state,{type:'clock',at:'2026-10-26T17:00:00+07:00'},'Tutor');state=execute(state,{type:'complete',sessionId:'O01-F26'},'Tutor');
+test('Completion: exact blueprint service and contribution totals',()=>{assert.equal(metrics(state).completed,26);assert.equal(metrics(state).service,19900000);assert.equal(metrics(state).costs,5010000);assert.equal(metrics(state).contribution,14890000);assert.equal(balance(state,'ENT041'),7);assert.equal(balance(state,'ENT001'),3);});
+test('Retry completion cannot double consume',()=>assert.deepEqual(execute(state,{type:'complete',sessionId:'O01-F26'},'Tutor'),state));
+test('Partial overlap rejected and adjacent slot accepted',()=>{const cmd={type:'reschedule',sessionId:'O01-F26',startsAt:'2026-10-27T15:30:00+07:00',endsAt:'2026-10-27T16:30:00+07:00',reason:'Test'};assert.throws(()=>execute(fresh(),cmd),/Bentrok/);const next=execute(fresh(),{...cmd,startsAt:'2026-10-27T16:00:00+07:00',endsAt:'2026-10-27T17:00:00+07:00'});assert.equal(next.sessions.at(-1).replaces_id,'O01-F26');});
+test('Tutor cancellation never debits or creates completed cost',()=>{const s=fresh(),next=execute(s,{type:'cancel',sessionId:'O06-F27',reason:'Test',by:'tutor'});assert.deepEqual(next.entitlement_ledger,s.entitlement_ledger);assert.deepEqual(next.session_costs,s.session_costs);});
+test('Renewal remains a separate package',()=>{const s=execute(fresh(),{type:'pay',invoiceId:'RINV001',amount:440000,key:'renew'});assert.equal(metrics(s).cash,45360000);assert.equal(metrics(s).receivables,3840000);assert.equal(balance(s,'ENT007'),2);assert.equal(s.entitlements.filter(e=>e.enrollment_id==='E007').length,2);});
+test('Hold expiry releases pending capacity',()=>{const s=execute(execute(fresh(),{type:'enroll',leadId:'LEAD01',offeringId:'O01'}),{type:'clock',at:'2026-10-27T09:00:00+07:00'});assert.equal(available(s,'O01'),4);});
+test('Publication requires submit and keeps immutable published history',()=>{assert.throws(()=>execute(fresh(),{type:'publish',assessmentId:'AS02'}));const submitted=execute(fresh(),{type:'assessment',enrollmentId:'E002',note:'Test Fajar',competencies:{speaking:'Mandiri',listening:'Mulai mandiri'},status:'submitted'},'Tutor');const published=execute(submitted,{type:'publish',assessmentId:'AS02'},'Admin');assert.equal(published.assessments.find(a=>a.id==='AS02').status,'published');});
+console.log(`${count} blueprint invariant checks passed.`);
