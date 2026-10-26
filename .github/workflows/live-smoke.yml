@@ -1,0 +1,25 @@
+name: Verify public Netlify deployment
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check public pages and API boundary without submitting a lead
+        run: |
+          node --input-type=module <<'JS'
+          const origin='https://demo-kabrtutor.netlify.app';
+          for(const path of ['/', '/demo/owner', '/biaya', '/permintaan-demo']) {
+            const r=await fetch(origin+path); const text=await r.text();
+            console.log(path,r.status,'KabrTutor:',text.includes('KabrTutor'));
+            if(!r.ok||!text.includes('KabrTutor'))process.exitCode=1;
+          }
+          const api=await fetch(origin+'/api/demo-requests');
+          console.log('API method boundary:',api.status);
+          if(api.status!==405)process.exitCode=1;
+          JS
