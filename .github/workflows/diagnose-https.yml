@@ -1,0 +1,29 @@
+name: Diagnose Worker HTTPS
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/diagnose-https.yml']
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check DNS, certificate identity and HTTP
+        run: |
+          node --input-type=module <<'JS'
+          import tls from 'node:tls';
+          import {resolve4} from 'node:dns/promises';
+          for(const host of ['kabrtutor.desainindongmas.workers.dev','kabrtutor.desainindongmas.my.id']){
+            console.log('HOST',host);
+            try{console.log('DNS',await resolve4(host));}catch(e){console.log('DNS_ERROR',e.code);}
+            await new Promise(resolve=>{
+              const s=tls.connect({host,port:443,servername:host,rejectUnauthorized:false},()=>{
+                const c=s.getPeerCertificate();
+                console.log('CERT',JSON.stringify({authorized:s.authorized,error:s.authorizationError,subject:c.subject,issuer:c.issuer,san:c.subjectaltname,validFrom:c.valid_from,validTo:c.valid_to}));
+                s.end();resolve();
+              });
+              s.setTimeout(15000,()=>{s.destroy();resolve()});
+              s.on('error',e=>{console.log('TLS_ERROR',e.code);resolve()});
+            });
+            try{const r=await fetch('https://'+host,{signal:AbortSignal.timeout(15000)});const body=await r.text();console.log('HTTP',r.status,'TITLE',body.match(/<title>(.*?)<\/title>/)?.[1]);}catch(e){console.log('HTTP_ERROR',e.cause?.code||e.message)}
+          }
+          JS
