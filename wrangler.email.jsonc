@@ -1,0 +1,9 @@
+{
+  "name": "kabrtutor-email",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-10-26",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "triggers": {"crons": ["*/5 * * * *"]},
+  "observability": {"enabled": true}
+}

@@ -9,9 +9,10 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "check": "tsc -b",
-    "deploy": "npm run build && npx wrangler@4 deploy",
-    "preview:cloudflare": "npm run build && npx wrangler@4 dev",
-    "check:worker": "npx wrangler@4 deploy --dry-run"
+    "deploy": "npm run build && npx wrangler@4 pages deploy dist",
+    "preview:cloudflare": "npm run build && npx wrangler@4 pages dev dist",
+    "check:worker": "npx wrangler@4 deploy --config wrangler.email.jsonc --dry-run && npx wrangler@4 pages functions build --outdir .wrangler/pages-build",
+    "deploy:email": "npx wrangler@4 deploy --config wrangler.email.jsonc"
   },
   "dependencies": {
     "react": "^19.2.0",

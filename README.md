@@ -31,17 +31,25 @@ Baseline: 40 peserta aktif, kapasitas 40/51, kas Rp44.920.000, piutang Rp4.280.0
 
 Role switcher hanya alat simulasi. Pembatasan UI ini bukan sistem otorisasi tenant produksi. Tidak ada pembayaran, pesan peserta, checkout platform, atau pencairan honor nyata.
 
-## Deploy GitHub → Cloudflare Workers
+## Deploy Cloudflare Pages, DNS tetap di Netlify
 
-Gunakan Workers dengan Static Assets, bukan Cloudflare Pages. `wrangler.jsonc` melayani frontend SPA, endpoint `/api/demo-requests`, serta Cron Trigger lima menit. Supabase tetap digunakan; migrasi SQL tidak berubah.
+Nameserver dan pengelolaan DNS domain induk tetap di Netlify. Frontend dan API menggunakan Cloudflare Pages Functions; email diproses Worker Cron terpisah. Tidak perlu menambahkan zona domain induk ke Cloudflare.
 
-1. Cloudflare Dashboard → Workers & Pages → Create → Import a repository. Pilih `desainindongmas/KabrTutor`, branch `main`, proyek Worker bernama `kabrtutor-demo`.
-2. Build command: `npm run build`. Deploy command: `npx wrangler@4 deploy`. Root directory: `/`. Gunakan Node 22 pada build. Jangan mengatur output Pages; assets sudah ditentukan sebagai `dist` di Wrangler.
-3. Deploy pertama dapat dilakukan sebelum secrets tersedia untuk menguji demo. Form mengembalikan kegagalan yang jujur sampai backend siap. Cron akan gagal sampai konfigurasi lengkap; periksa Workers Logs.
-4. Pada Worker → Settings → Variables and Secrets, isi variabel pada tabel di bawah. Simpan kredensial sebagai Secret, bukan build variable atau variabel `VITE_`. Deploy ulang bila diminta dashboard.
-5. Jalankan SQL `supabase/migrations/202610260001_demo_requests.sql` sekali di proyek Supabase. Jika sudah pernah dijalankan, jangan ulangi CREATE TABLE.
-6. Setelah URL `workers.dev` berfungsi, Worker → Settings → Domains & Routes → Add → Custom Domain: `kabrtutor.desainindongmas.my.id`. Zona `desainindongmas.my.id` harus aktif di akun Cloudflare yang sama. Jika record `kabrtutor` masih menunjuk Netlify, hapus hanya record yang konflik saat cutover lalu tambahkan custom domain melalui Worker. Cloudflare mengelola DNS/TLS binding tersebut. Jangan mengubah record MX/TXT email.
-7. Setelah custom domain lolos, hentikan auto-deploy Netlify dan hapus custom domain lama di Netlify. Jangan mematikan situs lama sebelum domain baru terverifikasi.
+1. Cloudflare → Workers & Pages → Create → **Pages** → Connect to Git. Pilih repo `desainindongmas/KabrTutor`, branch `main`.
+2. Nama proyek `kabrtutor-demo` (atau nama tersedia), build `npm run build`, output `dist`, root repo `/`, build variable `NODE_VERSION=22`. Git-integrated Pages tidak memerlukan deploy command Worker.
+3. Tunggu deployment berhasil dan uji URL `.pages.dev` yang diberikan Cloudflare. Functions pada folder `functions/` ikut dibangun otomatis. Konfigurasi `nodejs_compat` ada di `wrangler.jsonc`.
+4. Pages → Custom domains → Set up a domain: masukkan `kabrtutor.desainindongmas.my.id` terlebih dahulu.
+5. Netlify → pengelolaan DNS `desainindongmas.my.id`: ubah hanya record hostname `kabrtutor` menjadi CNAME ke **hostname `.pages.dev` aktual proyek** (tanpa https atau path). Jika record NETLIFY/NETLIFYv6 dikelola otomatis untuk hostname tersebut, lepaskan assignment subdomain itu dari situs Netlify lama dahulu; pertahankan zona DNS Netlify. Jangan ubah nameserver, record domain utama, MX, atau TXT.
+6. Kembali ke Pages dan tunggu validasi domain serta sertifikat Active. Jangan gunakan URL Worker lama sebagai target CNAME.
+
+### Database dan email: dua tempat konfigurasi
+
+- **Pages project → Settings → Variables and Secrets (Production):** `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `RATE_LIMIT_SECRET`. Redeploy setelah mengubah konfigurasi. Jangan memakai data produksi pada preview; tanpa secrets preview tetap bisa menjalankan simulasi.
+- Jalankan migrasi SQL Supabase sekali bila belum dilakukan. Endpoint tetap `/api/demo-requests` pada origin Pages yang sama.
+- **Worker terpisah `kabrtutor-email`:** buat Worker dari repo yang sama; deploy command `npx wrangler@4 deploy --config wrangler.email.jsonc`, build command boleh kosong karena bundler Wrangler mengompilasi TypeScript. Atau deploy dari komputer melalui `npm run deploy:email` setelah login Wrangler.
+- Pada Worker email, isi `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, dan semua `ZOHO_*` di tabel berikut. Worker email tidak memerlukan custom domain, public URL, atau `RATE_LIMIT_SECRET`.
+- **Matikan Cron Trigger Worker lama `kabrtutor` setelah worker email baru aktif**, agar hanya satu scheduler digunakan. Jangan menghapus layanan lama sebelum Pages/custom domain terverifikasi.
+- Pages menerima dan menyimpan permintaan meskipun worker email belum aktif; job tetap antre, bukan bukti email terkirim. Verifikasi Cron dan inbox sebelum menyatakan funnel siap.
 
 ### Konfigurasi runtime
 
@@ -78,6 +86,6 @@ Antrean tetap persisten di Supabase, dengan claim/lease, maksimal lima attempt, 
 
 ### Lokal dan CI
 
-`npm run preview:cloudflare` membangun frontend dan menjalankan Wrangler. Simpan runtime secrets lokal pada `.dev.vars` (diabaikan Git). `npm run deploy` membangun dan deploy melalui login Wrangler milikmu. CI menjalankan tes, TypeScript, Vite build, Wrangler dry-run, dan tes browser. Dry-run tidak memerlukan kredensial Cloudflare dan tidak menerbitkan Worker.
+`npm run preview:cloudflare` membangun frontend dan menjalankan Wrangler. Simpan runtime secrets lokal pada `.dev.vars` (diabaikan Git). `npm run deploy` membangun dan deploy Pages melalui login Wrangler milikmu; `npm run deploy:email` menerbitkan Worker Cron terpisah. CI menjalankan tes, TypeScript, Vite build, Wrangler dry-run, dan tes browser. Dry-run tidak memerlukan kredensial Cloudflare dan tidak menerbitkan Worker.
 
 State simulasi browser, seluruh role, harga software, dan dataset fiktif tetap sama. Backend tenant produksi tidak termasuk demo. Database/email live hanya dianggap terverifikasi setelah konfigurasi akun dan pemeriksaan nyata.
